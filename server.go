@@ -142,10 +142,10 @@ const (
 
 // Server structure encapsulates both IPv4/IPv6 UDP connections
 type Server struct {
-	service  *ServiceEntry
-	ipv4conn *ipv4.PacketConn
-	ipv6conn *ipv6.PacketConn
-	ifaces   []net.Interface
+	service   *ServiceEntry
+	ipv4conns map[int]*ipv4.PacketConn
+	ipv6conn  *ipv6.PacketConn
+	ifaces    []net.Interface
 
 	shouldShutdown chan struct{}
 	shutdownLock   sync.Mutex
@@ -156,7 +156,7 @@ type Server struct {
 
 // Constructs server structure
 func newServer(ifaces []net.Interface) (*Server, error) {
-	ipv4conn, err4 := joinUdp4Multicast(ifaces)
+	ipv4conns, err4 := joinUdp4Multicast(ifaces)
 	if err4 != nil {
 		log.Printf("[zeroconf] no suitable IPv4 interface: %s", err4.Error())
 	}
@@ -170,7 +170,7 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 	}
 
 	s := &Server{
-		ipv4conn:       ipv4conn,
+		ipv4conns:      ipv4conns,
 		ipv6conn:       ipv6conn,
 		ifaces:         ifaces,
 		ttl:            3200,
@@ -182,8 +182,8 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 
 // Start listeners and waits for the shutdown signal from exit channel
 func (s *Server) mainloop() {
-	if s.ipv4conn != nil {
-		go s.recv4(s.ipv4conn)
+	for _, ipv4conn := range s.ipv4conns {
+		go s.recv4(ipv4conn)
 	}
 	if s.ipv6conn != nil {
 		go s.recv6(s.ipv6conn)
@@ -218,8 +218,8 @@ func (s *Server) shutdown() error {
 
 	close(s.shouldShutdown)
 
-	if s.ipv4conn != nil {
-		s.ipv4conn.Close()
+	for _, ipv4conn := range s.ipv4conns {
+		ipv4conn.Close()
 	}
 	if s.ipv6conn != nil {
 		s.ipv6conn.Close()
@@ -701,9 +701,18 @@ func (s *Server) unicastResponse(resp *dns.Msg, ifIndex int, from net.Addr) erro
 		if ifIndex != 0 {
 			var wcm ipv4.ControlMessage
 			wcm.IfIndex = ifIndex
-			_, err = s.ipv4conn.WriteTo(buf, &wcm, addr)
+			switch ipv4conn, ok := s.ipv4conns[ifIndex]; {
+			case !ok:
+				err = fmt.Errorf("no conn for iface %d", ifIndex)
+			default:
+				_, err = ipv4conn.WriteTo(buf, &wcm, addr)
+			}
 		} else {
-			_, err = s.ipv4conn.WriteTo(buf, nil, addr)
+			for _, ipv4conn := range s.ipv4conns {
+				if _, err = ipv4conn.WriteTo(buf, nil, addr); err != nil {
+					return err
+				}
+			}
 		}
 		return err
 	} else {
@@ -724,16 +733,19 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 	if err != nil {
 		return err
 	}
-	if s.ipv4conn != nil {
+	for connIfIndex, ipv4conn := range s.ipv4conns {
 		var wcm ipv4.ControlMessage
 		if ifIndex != 0 {
-			wcm.IfIndex = ifIndex
-			s.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
-		} else {
-			for _, intf := range s.ifaces {
-				wcm.IfIndex = intf.Index
-				s.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
+			if connIfIndex != ifIndex {
+				continue
 			}
+			wcm.IfIndex = ifIndex
+			ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
+		} else {
+			//for _, intf := range s.ifaces {
+			wcm.IfIndex = connIfIndex //intf.Index
+			ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
+			//}
 		}
 	}
 
