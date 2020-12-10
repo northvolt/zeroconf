@@ -142,8 +142,10 @@ const (
 
 // Server structure encapsulates both IPv4/IPv6 UDP connections
 type Server struct {
-	service   *ServiceEntry
+	service *ServiceEntry
+	// ipv4conns maps interface index to ipv4conn on that interface
 	ipv4conns map[int]*ipv4.PacketConn
+	// ipv6conns maps interface index to ipv6conn on that interface
 	ipv6conns map[int]*ipv6.PacketConn
 	ifaces    []net.Interface
 
@@ -751,10 +753,8 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 			wcm.IfIndex = ifIndex
 			ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
 		} else {
-			//for _, intf := range s.ifaces {
-			wcm.IfIndex = connIfIndex //intf.Index
+			wcm.IfIndex = connIfIndex
 			ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
-			//}
 		}
 	}
 
@@ -767,10 +767,8 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 			wcm.IfIndex = ifIndex
 			ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
 		} else {
-			//for _, intf := range s.ifaces {
-			wcm.IfIndex = connIfIndex //intf.Index
+			wcm.IfIndex = connIfIndex
 			ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
-			//}
 		}
 	}
 	return nil

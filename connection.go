@@ -63,7 +63,6 @@ func joinUdp6Multicast(interfaces []net.Interface) (map[int]*ipv6.PacketConn, er
 		pkConns[iface.Index] = pkConn
 	}
 	if failedJoins == len(interfaces) {
-		//pkConn.Close()
 		return nil, fmt.Errorf("udp6: failed to join any of these interfaces: %v", interfaces)
 	}
 
@@ -100,7 +99,6 @@ func joinUdp4Multicast(interfaces []net.Interface) (map[int]*ipv4.PacketConn, er
 		pkConns[iface.Index] = pkConn
 	}
 	if failedJoins == len(interfaces) {
-		//pkConn.Close()
 		return nil, fmt.Errorf("udp4: failed to join any of these interfaces: %v", interfaces)
 	}
 

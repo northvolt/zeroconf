@@ -139,7 +139,9 @@ func defaultParams(service string) *LookupParams {
 
 // Client structure encapsulates both IPv4/IPv6 UDP connections.
 type client struct {
+	// ipv4conns maps interface index to ipv4conn on that interface
 	ipv4conns map[int]*ipv4.PacketConn
+	// ipv6conns maps interface index to ipv6conn on that interface
 	ipv6conns map[int]*ipv6.PacketConn
 	ifaces    []net.Interface
 }
@@ -437,17 +439,13 @@ func (c *client) sendQuery(msg *dns.Msg) error {
 	}
 	for ifIndex, ipv4conn := range c.ipv4conns {
 		var wcm ipv4.ControlMessage
-		//for ifi := range c.ifaces {
-		wcm.IfIndex = ifIndex // c.ifaces[ifi].Index
+		wcm.IfIndex = ifIndex
 		ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
-		//}
 	}
 	for ifIndex, ipv6conn := range c.ipv6conns {
 		var wcm ipv6.ControlMessage
-		//for ifi := range c.ifaces {
-		wcm.IfIndex = ifIndex // c.ifaces[ifi].Index
+		wcm.IfIndex = ifIndex
 		ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
-		//}
 	}
 	return nil
 }
