@@ -140,7 +140,7 @@ func defaultParams(service string) *LookupParams {
 // Client structure encapsulates both IPv4/IPv6 UDP connections.
 type client struct {
 	ipv4conns map[int]*ipv4.PacketConn
-	ipv6conn  *ipv6.PacketConn
+	ipv6conns map[int]*ipv6.PacketConn
 	ifaces    []net.Interface
 }
 
@@ -160,10 +160,10 @@ func newClient(opts clientOpts) (*client, error) {
 		}
 	}
 	// IPv6 interfaces
-	var ipv6conn *ipv6.PacketConn
+	var ipv6conns map[int]*ipv6.PacketConn
 	if (opts.listenOn & IPv6) > 0 {
 		var err error
-		ipv6conn, err = joinUdp6Multicast(ifaces)
+		ipv6conns, err = joinUdp6Multicast(ifaces)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +171,7 @@ func newClient(opts clientOpts) (*client, error) {
 
 	return &client{
 		ipv4conns: ipv4conns,
-		ipv6conn:  ipv6conn,
+		ipv6conns: ipv6conns,
 		ifaces:    ifaces,
 	}, nil
 }
@@ -183,8 +183,8 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 	for _, ipv4conn := range c.ipv4conns {
 		go c.recv(ctx, ipv4conn, msgCh)
 	}
-	if c.ipv6conn != nil {
-		go c.recv(ctx, c.ipv6conn, msgCh)
+	for _, ipv6conn := range c.ipv6conns {
+		go c.recv(ctx, ipv6conn, msgCh)
 	}
 
 	// Iterate through channels from listeners goroutines
@@ -306,8 +306,8 @@ func (c *client) shutdown() {
 	for _, ipv4conn := range c.ipv4conns {
 		ipv4conn.Close()
 	}
-	if c.ipv6conn != nil {
-		c.ipv6conn.Close()
+	for _, ipv6conn := range c.ipv6conns {
+		ipv6conn.Close()
 	}
 }
 
@@ -442,12 +442,12 @@ func (c *client) sendQuery(msg *dns.Msg) error {
 		ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
 		//}
 	}
-	if c.ipv6conn != nil {
+	for ifIndex, ipv6conn := range c.ipv6conns {
 		var wcm ipv6.ControlMessage
-		for ifi := range c.ifaces {
-			wcm.IfIndex = c.ifaces[ifi].Index
-			c.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
-		}
+		//for ifi := range c.ifaces {
+		wcm.IfIndex = ifIndex // c.ifaces[ifi].Index
+		ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
+		//}
 	}
 	return nil
 }

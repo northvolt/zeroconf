@@ -35,34 +35,38 @@ var (
 	}
 )
 
-func joinUdp6Multicast(interfaces []net.Interface) (*ipv6.PacketConn, error) {
-	udpConn, err := net.ListenUDP("udp6", mdnsWildcardAddrIPv6)
-	if err != nil {
-		return nil, err
-	}
-
-	// Join multicast groups to receive announcements
-	pkConn := ipv6.NewPacketConn(udpConn)
-	pkConn.SetControlMessage(ipv6.FlagInterface, true)
-
+func joinUdp6Multicast(interfaces []net.Interface) (map[int]*ipv6.PacketConn, error) {
 	if len(interfaces) == 0 {
 		interfaces = listMulticastInterfaces()
 	}
 	// log.Println("Using multicast interfaces: ", interfaces)
 
+	var pkConns = map[int]*ipv6.PacketConn{}
 	var failedJoins int
 	for _, iface := range interfaces {
+		udpConn, err := net.ListenMulticastUDP("udp6", &iface, mdnsWildcardAddrIPv6)
+		if err != nil {
+			return nil, err
+		}
+
+		// Join multicast groups to receive announcements
+		pkConn := ipv6.NewPacketConn(udpConn)
+		pkConn.SetControlMessage(ipv6.FlagInterface, true)
+
 		if err := pkConn.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv6}); err != nil {
 			// log.Println("Udp6 JoinGroup failed for iface ", iface)
 			failedJoins++
+			pkConn.Close()
+			continue
 		}
+		pkConns[iface.Index] = pkConn
 	}
 	if failedJoins == len(interfaces) {
-		pkConn.Close()
+		//pkConn.Close()
 		return nil, fmt.Errorf("udp6: failed to join any of these interfaces: %v", interfaces)
 	}
 
-	return pkConn, nil
+	return pkConns, nil
 }
 
 func joinUdp4Multicast(interfaces []net.Interface) (map[int]*ipv4.PacketConn, error) {
