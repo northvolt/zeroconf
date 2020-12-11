@@ -701,37 +701,51 @@ func (s *Server) unicastResponse(resp *dns.Msg, ifIndex int, from net.Addr) erro
 	addr := from.(*net.UDPAddr)
 	if addr.IP.To4() != nil {
 		if ifIndex != 0 {
+			ipv4conn, ok := s.ipv4conns[ifIndex]
+			if !ok {
+				return fmt.Errorf("no conn for iface %d", ifIndex)
+			}
 			var wcm ipv4.ControlMessage
 			wcm.IfIndex = ifIndex
-			switch ipv4conn, ok := s.ipv4conns[ifIndex]; {
-			case !ok:
-				err = fmt.Errorf("no conn for iface %d", ifIndex)
-			default:
-				_, err = ipv4conn.WriteTo(buf, &wcm, addr)
-			}
+			_, err = ipv4conn.WriteTo(buf, &wcm, addr)
 		} else {
-			for _, ipv4conn := range s.ipv4conns {
-				if _, err = ipv4conn.WriteTo(buf, nil, addr); err != nil {
-					return err
+			writeOk := false
+			for connIfIndex, ipv4conn := range s.ipv4conns {
+				var wcm ipv4.ControlMessage
+				wcm.IfIndex = connIfIndex
+				if _, e := ipv4conn.WriteTo(buf, &wcm, addr); e != nil {
+					err = e
+				} else {
+					writeOk = true
 				}
+			}
+			if writeOk {
+				err = nil
 			}
 		}
 		return err
 	} else {
 		if ifIndex != 0 {
+			ipv6conn, ok := s.ipv6conns[ifIndex]
+			if !ok {
+				return fmt.Errorf("no conn for iface %d", ifIndex)
+			}
 			var wcm ipv6.ControlMessage
 			wcm.IfIndex = ifIndex
-			switch ipv6conn, ok := s.ipv6conns[ifIndex]; {
-			case !ok:
-				err = fmt.Errorf("no conn for iface %d", ifIndex)
-			default:
-				_, err = ipv6conn.WriteTo(buf, &wcm, addr)
-			}
+			_, err = ipv6conn.WriteTo(buf, &wcm, addr)
 		} else {
-			for _, ipv6conn := range s.ipv6conns {
-				if _, err = ipv6conn.WriteTo(buf, nil, addr); err != nil {
-					return err
+			writeOk := false
+			for connIfIndex, ipv6conn := range s.ipv6conns {
+				var wcm ipv6.ControlMessage
+				wcm.IfIndex = connIfIndex
+				if _, e := ipv6conn.WriteTo(buf, &wcm, addr); e != nil {
+					err = e
+				} else {
+					writeOk = true
 				}
+			}
+			if writeOk {
+				err = nil
 			}
 		}
 		return err
