@@ -139,9 +139,11 @@ func defaultParams(service string) *LookupParams {
 
 // Client structure encapsulates both IPv4/IPv6 UDP connections.
 type client struct {
-	ipv4conn *ipv4.PacketConn
-	ipv6conn *ipv6.PacketConn
-	ifaces   []net.Interface
+	// ipv4conns maps interface index to ipv4conn on that interface
+	ipv4conns map[int]*ipv4.PacketConn
+	// ipv6conns maps interface index to ipv6conn on that interface
+	ipv6conns map[int]*ipv6.PacketConn
+	ifaces    []net.Interface
 }
 
 // Client structure constructor
@@ -151,28 +153,28 @@ func newClient(opts clientOpts) (*client, error) {
 		ifaces = listMulticastInterfaces()
 	}
 	// IPv4 interfaces
-	var ipv4conn *ipv4.PacketConn
+	var ipv4conns map[int]*ipv4.PacketConn
 	if (opts.listenOn & IPv4) > 0 {
 		var err error
-		ipv4conn, err = joinUdp4Multicast(ifaces)
+		ipv4conns, err = joinUdp4Multicast(ifaces)
 		if err != nil {
 			return nil, err
 		}
 	}
 	// IPv6 interfaces
-	var ipv6conn *ipv6.PacketConn
+	var ipv6conns map[int]*ipv6.PacketConn
 	if (opts.listenOn & IPv6) > 0 {
 		var err error
-		ipv6conn, err = joinUdp6Multicast(ifaces)
+		ipv6conns, err = joinUdp6Multicast(ifaces)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	return &client{
-		ipv4conn: ipv4conn,
-		ipv6conn: ipv6conn,
-		ifaces:   ifaces,
+		ipv4conns: ipv4conns,
+		ipv6conns: ipv6conns,
+		ifaces:    ifaces,
 	}, nil
 }
 
@@ -180,11 +182,11 @@ func newClient(opts clientOpts) (*client, error) {
 func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 	// start listening for responses
 	msgCh := make(chan *dns.Msg, 32)
-	if c.ipv4conn != nil {
-		go c.recv(ctx, c.ipv4conn, msgCh)
+	for _, ipv4conn := range c.ipv4conns {
+		go c.recv(ctx, ipv4conn, msgCh)
 	}
-	if c.ipv6conn != nil {
-		go c.recv(ctx, c.ipv6conn, msgCh)
+	for _, ipv6conn := range c.ipv6conns {
+		go c.recv(ctx, ipv6conn, msgCh)
 	}
 
 	// Iterate through channels from listeners goroutines
@@ -303,11 +305,11 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 
 // Shutdown client will close currently open connections and channel implicitly.
 func (c *client) shutdown() {
-	if c.ipv4conn != nil {
-		c.ipv4conn.Close()
+	for _, ipv4conn := range c.ipv4conns {
+		ipv4conn.Close()
 	}
-	if c.ipv6conn != nil {
-		c.ipv6conn.Close()
+	for _, ipv6conn := range c.ipv6conns {
+		ipv6conn.Close()
 	}
 }
 
@@ -435,19 +437,15 @@ func (c *client) sendQuery(msg *dns.Msg) error {
 	if err != nil {
 		return err
 	}
-	if c.ipv4conn != nil {
+	for ifIndex, ipv4conn := range c.ipv4conns {
 		var wcm ipv4.ControlMessage
-		for ifi := range c.ifaces {
-			wcm.IfIndex = c.ifaces[ifi].Index
-			c.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
-		}
+		wcm.IfIndex = ifIndex
+		ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
 	}
-	if c.ipv6conn != nil {
+	for ifIndex, ipv6conn := range c.ipv6conns {
 		var wcm ipv6.ControlMessage
-		for ifi := range c.ifaces {
-			wcm.IfIndex = c.ifaces[ifi].Index
-			c.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
-		}
+		wcm.IfIndex = ifIndex
+		ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
 	}
 	return nil
 }
