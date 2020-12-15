@@ -1,3 +1,5 @@
+This is a fork of https://github.com/grandcat/zeroconf to make it work in windows
+
 ZeroConf: Service Discovery with mDNS
 =====================================
 ZeroConf is a pure Golang library that employs Multicast DNS-SD for
